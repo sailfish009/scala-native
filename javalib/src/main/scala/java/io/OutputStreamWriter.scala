@@ -40,7 +40,15 @@ class OutputStreamWriter(private[this] var out: OutputStream,
     this(out, Charset.defaultCharset)
 
   def this(out: OutputStream, charsetName: String) =
-    this(out, Charset.forName(Objects.requireNonNull(charsetName)))
+    this(
+      out,
+      try {
+        Charset.forName(Objects.requireNonNull(charsetName))
+      } catch {
+        case e: UnsupportedCharsetException =>
+          throw new java.io.UnsupportedEncodingException(charsetName)
+      }
+    )
 
   def getEncoding(): String =
     if (closed) null else enc.charset.name
@@ -143,7 +151,7 @@ class OutputStreamWriter(private[this] var out: OutputStream,
   }
 
   private def makeRoomInOutBuf(): Unit = {
-    if (outBuf.position != 0) {
+    if (outBuf.position() != 0) {
       flushBuffer()
     } else {
       // Very unlikely (outBuf.capacity is not enough to encode a single code point)

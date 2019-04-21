@@ -1,7 +1,6 @@
 package scala.scalanative
 package sbtplugin
 
-import scalanative.tools
 import ScalaNativePluginInternal._
 
 import sbt._
@@ -9,9 +8,7 @@ import sbt._
 object ScalaNativePlugin extends AutoPlugin {
   override def requires: Plugins = plugins.JvmPlugin
 
-  val autoImport = AutoImport
-
-  object AutoImport extends NativeCross {
+  object autoImport {
 
     val ScalaNativeCrossVersion = sbtplugin.ScalaNativeCrossVersion
 
@@ -37,21 +34,19 @@ object ScalaNativePlugin extends AutoPlugin {
     val nativeLink =
       taskKey[File]("Generates native binary without running it.")
 
-    val nativeExternalDependencies =
-      taskKey[Seq[String]]("List all external dependencies at link time.")
-
-    val nativeAvailableDependencies =
-      taskKey[Seq[String]]("List all symbols available at link time")
-
-    val nativeMissingDependencies =
-      taskKey[Seq[String]]("List all symbols not available at link time")
-
     val nativeMode =
       settingKey[String]("Compilation mode, either \"debug\" or \"release\".")
 
     val nativeGC =
       settingKey[String]("GC choice, either \"none\", \"boehm\" or \"immix\".")
+
+    val nativeLTO =
+      taskKey[String](
+        "LTO variant used for release mode (either \"none\", \"thin\" or \"full\").")
   }
+
+  @deprecated("use autoImport instead", "0.3.7")
+  val AutoImport = autoImport
 
   override def globalSettings: Seq[Setting[_]] =
     ScalaNativePluginInternal.scalaNativeGlobalSettings

@@ -1,7 +1,7 @@
 package scala.scalanative
 package linker
 
-import nir.Global.Top
+import nir.{Sig, Type, Global}
 
 class StubSpec extends LinkerSpec {
 
@@ -26,45 +26,48 @@ class StubSpec extends LinkerSpec {
   "Stub methods" should "be ignored by the linker when `linkStubs = false`" in {
     link(entry, stubMethodSource, linkStubs = false) { (cfg, result) =>
       assert(!cfg.linkStubs)
-      assert(result.unresolved.length == 1)
-      assert(result.unresolved.head == Top("Main$").member("stubMethod_i32"))
+      assert(result.unavailable.length == 1)
+      assert(
+        result.unavailable.head == Global
+          .Top("Main$")
+          .member(Sig.Method("stubMethod", Seq(Type.Int))))
     }
   }
 
   it should "be included when `linkStubs = true`" in {
     link(entry, stubMethodSource, linkStubs = true) { (cfg, result) =>
       assert(cfg.linkStubs)
-      assert(result.unresolved.isEmpty)
+      assert(result.unavailable.isEmpty)
     }
   }
 
   "Stub classes" should "be ignored by the linker when `linkStubs = false`" in {
     link(entry, stubClassSource, linkStubs = false) { (cfg, result) =>
       assert(!cfg.linkStubs)
-      assert(result.unresolved.length == 1)
-      assert(result.unresolved.head == Top("StubClass"))
+      assert(result.unavailable.length == 1)
+      assert(result.unavailable.head == Global.Top("StubClass"))
     }
   }
 
   it should "be included when `linkStubs = true`" in {
     link(entry, stubClassSource, linkStubs = true) { (cfg, result) =>
       assert(cfg.linkStubs)
-      assert(result.unresolved.isEmpty)
+      assert(result.unavailable.isEmpty)
     }
   }
 
   "Stub modules" should "be ignored by the linker when `linkStubs = false`" in {
     link(entry, stubModuleSource, linkStubs = false) { (cfg, result) =>
       assert(!cfg.linkStubs)
-      assert(result.unresolved.length == 1)
-      assert(result.unresolved.head == Top("StubModule$"))
+      assert(result.unavailable.length == 1)
+      assert(result.unavailable.head == Global.Top("StubModule$"))
     }
   }
 
   it should "be included when `linkStubs = true`" in {
     link(entry, stubModuleSource, linkStubs = true) { (cfg, result) =>
       assert(cfg.linkStubs)
-      assert(result.unresolved.isEmpty)
+      assert(result.unavailable.isEmpty)
     }
   }
 

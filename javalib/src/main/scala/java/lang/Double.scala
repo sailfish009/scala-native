@@ -1,6 +1,9 @@
 package java.lang
 
 import scalanative.native._
+import scalanative.libc._
+
+import scalanative.runtime.ieee754tostring.ryu.{RyuRoundingMode, RyuDouble}
 
 final class Double(val _value: scala.Double)
     extends Number
@@ -285,11 +288,8 @@ object Double {
 
           val hexSignificand = java.lang.Long.toHexString(significand)
           if (significand != 0 && fractionDigits > hexSignificand.length) {
-            var digitDiff = fractionDigits - hexSignificand.length - 1
-            while (digitDiff != 0) {
-              hexString.append('0')
-              digitDiff -= 1
-            }
+            val digitDiff = fractionDigits - hexSignificand.length
+            hexString.append("0" * digitDiff)
           }
 
           hexString.append(hexSignificand)
@@ -304,11 +304,8 @@ object Double {
 
           val hexSignificand = java.lang.Long.toHexString(significand)
           if (significand != 0 && fractionDigits > hexSignificand.length) {
-            var digitDiff = fractionDigits - hexSignificand.length - 1
-            while (digitDiff != 0) {
-              hexString.append('0')
-              digitDiff -= 1
-            }
+            var digitDiff = fractionDigits - hexSignificand.length
+            hexString.append("0" * digitDiff)
           }
 
           hexString.append(hexSignificand)
@@ -322,17 +319,7 @@ object Double {
   }
 
   @inline def toString(d: scala.Double): String = {
-    if (isNaN(d)) {
-      "NaN"
-    } else if (d == POSITIVE_INFINITY) {
-      "Infinity"
-    } else if (d == NEGATIVE_INFINITY) {
-      "-Infinity"
-    } else {
-      val cstr = stackalloc[CChar](32)
-      stdio.snprintf(cstr, 32, c"%f", d)
-      fromCString(cstr)
-    }
+    RyuDouble.doubleToString(d, RyuRoundingMode.Conservative)
   }
 
   @inline def valueOf(d: scala.Double): Double =

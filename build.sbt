@@ -1,19 +1,53 @@
 import java.io.File.pathSeparator
 import scala.util.Try
-import scalanative.tools.OptimizerReporter
 import scalanative.sbtplugin.ScalaNativePluginInternal._
 import scalanative.io.packageNameFromPath
 
-val sbt13Version          = "0.13.16"
+val sbt13Version          = "0.13.17"
 val sbt13ScalaVersion     = "2.10.7"
-val sbt10Version          = "1.0.4"
-val sbt10ScalaVersion     = "2.12.4"
+val sbt10Version          = "1.2.6"
+val sbt10ScalaVersion     = "2.12.7"
 val libScalaVersion       = "2.11.12"
 val libCrossScalaVersions = Seq("2.11.8", "2.11.11", libScalaVersion)
 
+// Convert "SomeName" to "some-name".
+def convertCamelKebab(name: String): String = {
+  name.replaceAll("([a-z])([A-Z]+)", "$1-$2").toLowerCase
+}
+
+// Generate project name from project id.
+def projectName(project: sbt.ResolvedProject): String = {
+  convertCamelKebab(project.id)
+}
+
+lazy val startupTransition: State => State = { s: State =>
+  if (System.getProperty("METALS_ENABLED") != null) "^^1.2.6" :: s
+  else s
+}
+
+onLoad in Global := {
+  val old = (onLoad in Global).value
+  startupTransition compose old
+}
+
+// Provide consistent project name pattern.
+lazy val nameSettings = Seq(
+  normalizedName := projectName(thisProject.value), // Maven <artifactId>
+  name := s"Scala Native ${projectName(thisProject.value)}" // Maven <name>
+)
+
+// The previous releases of Scala Native with which this version is binary compatible.
+val binCompatVersions = Set()
+
+lazy val mimaSettings: Seq[Setting[_]] = Seq(
+  mimaPreviousArtifacts := binCompatVersions.map { version =>
+    organization.value %% moduleName.value % version
+  }
+)
+
 lazy val baseSettings = Seq(
-  organization := "org.scala-native",
-  version := nativeVersion
+  organization := "org.scala-native", // Maven <groupId>
+  version := nativeVersion // Maven <version>
 )
 
 addCommandAlias(
@@ -29,12 +63,10 @@ addCommandAlias(
 addCommandAlias(
   "dirty-rebuild",
   Seq(
-    "nscplugin/publishLocal",
-    "nativelib/publishLocal",
-    "javalib/publishLocal",
-    "auxlib/publishLocal",
     "scalalib/publishLocal",
-    "publishLocal"
+    "testRunner/publishLocal",
+    "sbtScalaNative/publishLocal",
+    "testInterface/publishLocal"
   ).mkString(";", ";", "")
 )
 
@@ -44,8 +76,27 @@ addCommandAlias(
     "sandbox/run",
     "tests/test",
     "tools/test",
-    "benchmarks/run --test",
-    "scripted"
+    "nirparser/test",
+    "sbtScalaNative/scripted",
+    "tools/mimaReportBinaryIssues"
+  ).mkString(";", ";", "")
+)
+
+addCommandAlias(
+  "test-tools",
+  Seq(
+    "tools/test",
+    "nirparser/test",
+    "tools/mimaReportBinaryIssues"
+  ).mkString(";", ";", "")
+)
+
+addCommandAlias(
+  "test-runtime",
+  Seq(
+    "sandbox/run",
+    "tests/test",
+    "sbtScalaNative/scripted"
   ).mkString(";", ";", "")
 )
 
@@ -56,6 +107,8 @@ lazy val setUpTestingCompiler = Def.task {
   val nscpluginjar = (Keys.`package` in nscplugin in Compile).value
   val nativelibjar = (Keys.`package` in nativelib in Compile).value
   val auxlibjar    = (Keys.`package` in auxlib in Compile).value
+  val clibjar      = (Keys.`package` in clib in Compile).value
+  val posixlibjar  = (Keys.`package` in posixlib in Compile).value
   val scalalibjar  = (Keys.`package` in scalalib in Compile).value
   val javalibjar   = (Keys.`package` in javalib in Compile).value
   val testingcompilercp =
@@ -66,7 +119,7 @@ lazy val setUpTestingCompiler = Def.task {
   sys.props("scalanative.testingcompiler.cp") =
     (testingcompilercp :+ testingcompilerjar) map (_.getAbsolutePath) mkString pathSeparator
   sys.props("scalanative.nativeruntime.cp") =
-    Seq(nativelibjar, auxlibjar, scalalibjar, javalibjar) mkString pathSeparator
+    Seq(nativelibjar, auxlibjar, clibjar, posixlibjar, scalalibjar, javalibjar) mkString pathSeparator
   sys.props("scalanative.nativelib.dir") =
     ((crossTarget in Compile).value / "nativelib").getAbsolutePath
 }
@@ -129,6 +182,10 @@ lazy val mavenPublishSettings = Seq(
 lazy val publishSettings = Seq(
   publishArtifact in Compile := true,
   publishArtifact in Test := false,
+  publishArtifact in (Compile, packageDoc) :=
+    !version.value.contains("SNAPSHOT"),
+  publishArtifact in (Compile, packageSrc) :=
+    !version.value.contains("SNAPSHOT"),
   homepage := Some(url("http://www.scala-native.org")),
   startYear := Some(2015),
   licenses := Seq(
@@ -150,7 +207,7 @@ lazy val publishSettings = Seq(
       <url>https://github.com/scala-native/scala-native/issues</url>
     </issueManagement>
   )
-)
+) ++ nameSettings
 
 lazy val noPublishSettings = Seq(
   publishArtifact := false,
@@ -160,7 +217,7 @@ lazy val noPublishSettings = Seq(
   publishSnapshot := {
     println("no publish")
   }
-)
+) ++ nameSettings
 
 lazy val toolSettings =
   baseSettings ++
@@ -189,22 +246,12 @@ lazy val libSettings =
     scalacOptions ++= Seq("-encoding", "utf8")
   )
 
-lazy val gcSettings =
-  if (!System.getenv.containsKey("SCALANATIVE_GC")) {
-    println("Using default gc")
-    Seq.empty
-  } else {
-    val gc = System.getenv.get("SCALANATIVE_GC")
-    println(s"Using gc based on SCALANATIVE_GC=$gc")
-    Seq(nativeGC := gc)
-  }
-
 lazy val projectSettings =
   ScalaNativePlugin.projectSettings ++ Seq(
     scalaVersion := libScalaVersion,
     resolvers := Nil,
     scalacOptions ++= Seq("-target:jvm-1.8")
-  ) ++ gcSettings
+  )
 
 lazy val util =
   project
@@ -219,6 +266,23 @@ lazy val nir =
     .settings(mavenPublishSettings)
     .dependsOn(util)
 
+lazy val nirparser =
+  project
+    .in(file("nirparser"))
+    .settings(toolSettings)
+    .settings(noPublishSettings)
+    .settings(
+      libraryDependencies ++= Seq(
+        "com.lihaoyi" %% "fastparse"  % "1.0.0",
+        "com.lihaoyi" %% "scalaparse" % "1.0.0",
+        compilerPlugin(
+          "org.scalamacros" % "paradise" % "2.1.0" cross CrossVersion.full),
+        "org.scalacheck" %% "scalacheck" % "1.13.4" % "test",
+        "org.scalatest"  %% "scalatest"  % "3.0.0"  % "test"
+      )
+    )
+    .dependsOn(nir)
+
 lazy val tools =
   project
     .in(file("tools"))
@@ -226,12 +290,8 @@ lazy val tools =
     .settings(mavenPublishSettings)
     .settings(
       libraryDependencies ++= Seq(
-        "com.lihaoyi"    %% "fastparse"  % "0.4.2",
-        "com.lihaoyi"    %% "scalaparse" % "0.4.2",
         "org.scalacheck" %% "scalacheck" % "1.13.4" % "test",
-        compilerPlugin(
-          "org.scalamacros" % "paradise" % "2.1.0" cross CrossVersion.full),
-        "org.scalatest" %% "scalatest" % "3.0.0" % "test"
+        "org.scalatest"  %% "scalatest"  % "3.0.0"  % "test"
       ),
       fullClasspath in Test := ((fullClasspath in Test) dependsOn setUpTestingCompiler).value,
       publishLocal := publishLocal
@@ -239,7 +299,8 @@ lazy val tools =
         .dependsOn(publishLocal in util)
         .value,
       // Running tests in parallel results in `FileSystemAlreadyExistsException`
-      parallelExecution in Test := false
+      parallelExecution in Test := false,
+      mimaSettings
     )
     .dependsOn(nir, util, testingCompilerInterface % Test)
 
@@ -270,7 +331,7 @@ lazy val sbtPluginSettings =
       sbtPlugin := true,
       scriptedLaunchOpts ++=
         Seq("-Xmx1024M",
-            "-XX:MaxPermSize=256M",
+            "-XX:MaxMetaspaceSize=256M",
             "-Dplugin.version=" + version.value) ++
           ivyPaths.value.ivyHome.map(home => s"-Dsbt.ivy.home=${home}").toSeq
     )
@@ -283,8 +344,7 @@ lazy val sbtScalaNative =
       crossScalaVersions := libCrossScalaVersions,
       // fixed in https://github.com/sbt/sbt/pull/3397 (for sbt 0.13.17)
       sbtBinaryVersion in update := (sbtBinaryVersion in pluginCrossBuild).value,
-      addSbtPlugin("org.scala-native" % "sbt-crossproject" % "0.2.2"),
-      moduleName := "sbt-scala-native",
+      addSbtPlugin("org.portable-scala" % "sbt-platform-deps" % "1.0.0"),
       sbtTestDirectory := (baseDirectory in ThisBuild).value / "scripted-tests",
       // `testInterfaceSerialization` needs to be available from the sbt plugin,
       // but it's a Scala Native project (and thus 2.11), and the plugin is 2.10 or 2.12.
@@ -292,23 +352,15 @@ lazy val sbtScalaNative =
       sources in Compile ++= (sources in Compile in testInterfaceSerialization).value,
       // publish the other projects before running scripted tests.
       scripted := scripted
-        .dependsOn(
-          publishLocal in util,
-          publishLocal in nir,
-          publishLocal in tools,
-          publishLocal in nscplugin,
-          publishLocal in nativelib,
-          publishLocal in javalib,
-          publishLocal in auxlib,
-          publishLocal in scalalib,
-          publishLocal in testInterfaceSbtDefs,
-          publishLocal in testInterfaceSerialization,
-          publishLocal in testInterface
-        )
+        .dependsOn(publishLocal in testInterface)
+        .dependsOn(publishLocal in ThisProject)
+        .dependsOn(publishLocal in scalalib)
         .evaluated,
-      publishLocal := publishLocal.dependsOn(publishLocal in tools).value
+      publishLocal := publishLocal
+        .dependsOn(publishLocal in tools, publishLocal in testRunner)
+        .value
     )
-    .dependsOn(tools)
+    .dependsOn(tools, testRunner)
 
 lazy val nativelib =
   project
@@ -316,8 +368,35 @@ lazy val nativelib =
     .settings(libSettings)
     .settings(mavenPublishSettings)
     .settings(
-      libraryDependencies += "org.scala-lang" % "scala-reflect" % scalaVersion.value
+      libraryDependencies += "org.scala-lang" % "scala-reflect" % scalaVersion.value,
+      publishLocal := publishLocal
+        .dependsOn(publishLocal in nscplugin)
+        .value
     )
+
+lazy val clib =
+  project
+    .in(file("clib"))
+    .settings(libSettings)
+    .settings(mavenPublishSettings)
+    .settings(
+      publishLocal := publishLocal
+        .dependsOn(publishLocal in nativelib)
+        .value
+    )
+    .dependsOn(nativelib)
+
+lazy val posixlib =
+  project
+    .in(file("posixlib"))
+    .settings(libSettings)
+    .settings(mavenPublishSettings)
+    .settings(
+      publishLocal := publishLocal
+        .dependsOn(publishLocal in clib)
+        .value
+    )
+    .dependsOn(clib)
 
 lazy val javalib =
   project
@@ -344,9 +423,12 @@ lazy val javalib =
           case (file, path) =>
             !path.endsWith(".class")
         }
-      }
+      },
+      publishLocal := publishLocal
+        .dependsOn(publishLocal in nativelib, publishLocal in posixlib)
+        .value
     )
-    .dependsOn(nativelib)
+    .dependsOn(nativelib, posixlib)
 
 lazy val assembleScalaLibrary = taskKey[Unit](
   "Checks out scala standard library from submodules/scala and then applies overrides.")
@@ -356,6 +438,11 @@ lazy val auxlib =
     .in(file("auxlib"))
     .settings(libSettings)
     .settings(mavenPublishSettings)
+    .settings(
+      publishLocal := publishLocal
+        .dependsOn(publishLocal in javalib)
+        .value
+    )
     .dependsOn(nativelib)
 
 lazy val scalalib =
@@ -410,7 +497,17 @@ lazy val scalalib =
       compile in Compile := (compile in Compile)
         .dependsOn(assembleScalaLibrary)
         .value,
-      publishLocal := publishLocal.dependsOn(assembleScalaLibrary).value
+      // Don't include classfiles for scalalib in the packaged jar.
+      mappings in packageBin in Compile := {
+        val previous = (mappings in packageBin in Compile).value
+        previous.filter {
+          case (file, path) =>
+            !path.endsWith(".class")
+        }
+      },
+      publishLocal := publishLocal
+        .dependsOn(assembleScalaLibrary, publishLocal in auxlib)
+        .value
     )
     .dependsOn(auxlib, nativelib, javalib)
 
@@ -422,6 +519,8 @@ lazy val tests =
     .settings(
       // nativeOptimizerReporter := OptimizerReporter.toDirectory(
       //   crossTarget.value),
+      // nativeLinkerReporter := LinkerReporter.toFile(
+      //   target.value / "out.dot"),
       libraryDependencies += "org.scala-native" %%% "test-interface" % nativeVersion,
       testFrameworks += new TestFramework("tests.NativeFramework"),
       envVars in (Test, test) ++= Map(
@@ -429,8 +528,10 @@ lazy val tests =
         "HOME"                           -> baseDirectory.value.getAbsolutePath,
         "SCALA_NATIVE_ENV_WITH_EQUALS"   -> "1+1=2",
         "SCALA_NATIVE_ENV_WITHOUT_VALUE" -> "",
-        "SCALA_NATIVE_ENV_WITH_UNICODE"  -> 0x2192.toChar.toString
-      )
+        "SCALA_NATIVE_ENV_WITH_UNICODE"  -> 0x2192.toChar.toString,
+        "SCALA_NATIVE_USER_DIR"          -> System.getProperty("user.dir")
+      ),
+      nativeLinkStubs := true
     )
     .enablePlugins(ScalaNativePlugin)
 
@@ -442,35 +543,6 @@ lazy val sandbox =
       // nativeOptimizerReporter := OptimizerReporter.toDirectory(
       //   crossTarget.value),
       scalaVersion := libScalaVersion
-    )
-    .enablePlugins(ScalaNativePlugin)
-
-lazy val benchmarks =
-  project
-    .in(file("benchmarks"))
-    .settings(projectSettings)
-    .settings(noPublishSettings)
-    .settings(
-      nativeMode := "release",
-      sourceGenerators in Compile += Def.task {
-        val dir = (scalaSource in Compile).value
-        val benchmarks = (dir ** "*Benchmark.scala").get
-          .flatMap(IO.relativizeFile(dir, _))
-          .map(file => packageNameFromPath(file.toPath))
-          .filter(_ != "benchmarks.Benchmark")
-          .mkString("Seq(new ", ", new ", ")")
-        val file = (sourceManaged in Compile).value / "benchmarks" / "Discover.scala"
-        IO.write(
-          file,
-          s"""
-          package benchmarks
-          object Discover {
-            val discovered: Seq[benchmarks.Benchmark[_]] = $benchmarks
-          }
-        """
-        )
-        Seq(file)
-      }
     )
     .enablePlugins(ScalaNativePlugin)
 
@@ -505,9 +577,11 @@ lazy val testInterface =
     .settings(mavenPublishSettings)
     .in(file("test-interface"))
     .settings(
-      name := "test-interface",
       libraryDependencies += "org.scala-sbt"    % "test-interface"   % "1.0",
-      libraryDependencies -= "org.scala-native" %%% "test-interface" % version.value % Test
+      libraryDependencies -= "org.scala-native" %%% "test-interface" % version.value % Test,
+      publishLocal := publishLocal
+        .dependsOn(publishLocal in testInterfaceSerialization)
+        .value
     )
     .enablePlugins(ScalaNativePlugin)
     .dependsOn(testInterfaceSerialization)
@@ -519,8 +593,10 @@ lazy val testInterfaceSerialization =
     .settings(mavenPublishSettings)
     .in(file("test-interface-serialization"))
     .settings(
-      name := "test-interface-serialization",
-      libraryDependencies -= "org.scala-native" %%% "test-interface" % version.value % Test
+      libraryDependencies -= "org.scala-native" %%% "test-interface" % version.value % Test,
+      publishLocal := publishLocal
+        .dependsOn(publishLocal in testInterfaceSbtDefs)
+        .value
     )
     .dependsOn(testInterfaceSbtDefs)
     .enablePlugins(ScalaNativePlugin)
@@ -532,7 +608,18 @@ lazy val testInterfaceSbtDefs =
     .settings(mavenPublishSettings)
     .in(file("test-interface-sbt-defs"))
     .settings(
-      name := "test-interface-sbt-defs",
       libraryDependencies -= "org.scala-native" %%% "test-interface" % version.value % Test
     )
     .enablePlugins(ScalaNativePlugin)
+
+lazy val testRunner =
+  project
+    .settings(toolSettings)
+    .settings(mavenPublishSettings)
+    .in(file("test-runner"))
+    .settings(
+      crossScalaVersions := Seq(sbt13ScalaVersion, sbt10ScalaVersion),
+      libraryDependencies += "org.scala-sbt" % "test-interface" % "1.0",
+      sources in Compile ++= (sources in testInterfaceSerialization in Compile).value
+    )
+    .dependsOn(tools)

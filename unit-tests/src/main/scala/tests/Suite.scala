@@ -5,36 +5,53 @@ import sbt.testing.{EventHandler, Logger, Status}
 import scala.collection.mutable
 import scala.reflect.ClassTag
 
-final case object AssertionFailed extends Exception
+final case class AssertionFailed(msg: String) extends Exception(msg)
 
-final case class Test(name: String, run: () => Boolean)
+final case class TestResult(status: Boolean, thrown: Option[Throwable])
+
+final case class Test(name: String, run: () => TestResult)
 
 abstract class Suite {
   private val tests = new mutable.UnrolledBuffer[Test]
 
   def assert(cond: Boolean): Unit =
-    if (!cond) throw AssertionFailed else ()
+    assertTrue(cond)
+
+  def assert(cond: Boolean, message: String): Unit =
+    if (!cond) throw AssertionFailed(message) else ()
 
   def assertTrue(cond: Boolean): Unit =
-    assert(cond)
+    if (!cond) {
+      throw AssertionFailed(s"condition is false")
+    }
 
   def assertNot(cond: Boolean): Unit =
-    if (cond) throw AssertionFailed else ()
+    assertFalse(cond)
 
   def assertFalse(cond: Boolean): Unit =
-    assertNot(cond)
+    if (cond) {
+      throw AssertionFailed(s"condition is true")
+    }
 
   def assertNull[A](a: A): Unit =
-    assert(a == null)
+    if (a != null) {
+      throw AssertionFailed(s"$a != null")
+    }
 
   def assertNotNull[A](a: A): Unit =
-    assertNot(a == null)
+    if (a == null) {
+      throw AssertionFailed(s"$a == null")
+    }
 
   def assertEquals[T](left: T, right: T): Unit =
-    assert(left == right)
+    if (left != right) {
+      throw AssertionFailed(s"${left} != ${right}")
+    }
 
   def assertEquals(expected: Double, actual: Double, delta: Double): Unit =
-    assert(Math.abs(expected - actual) <= delta)
+    if (Math.abs(expected - actual) > delta) {
+      throw AssertionFailed(s"$expected - $actual > $delta")
+    }
 
   def expectThrows[T <: Throwable, U](expectedThrowable: Class[T],
                                       code: => U): Unit =
@@ -58,18 +75,19 @@ abstract class Suite {
         if (expected.isInstance(exc) && pred(exc.asInstanceOf[T]))
           return
         else
-          throw AssertionFailed
+          throw AssertionFailed(
+            s"expected ${expected.getName} but got ${exc.getClass.getName}")
     }
-    throw AssertionFailed
+    throw AssertionFailed(s"expected to throw ${expected.getName} but didn't")
   }
 
   def test(name: String)(body: => Unit): Unit =
     tests += Test(name, { () =>
       try {
         body
-        true
+        TestResult(true, None)
       } catch {
-        case _: Throwable => false
+        case thrown: Throwable => TestResult(false, Option(thrown))
       }
     })
 
@@ -77,11 +95,22 @@ abstract class Suite {
     tests += Test(name, { () =>
       try {
         body
-        false
+        TestResult(false, None)
       } catch {
-        case _: Throwable => true
+        case thrown: Throwable => TestResult(true, None)
       }
     })
+
+  @inline private[this] def getThrownString(thrown: Option[Throwable],
+                                            color: String,
+                                            indent: Int): String = {
+    if (thrown.isEmpty) ""
+    else {
+      val indentSpaces = " " * indent
+      val info         = thrown.get.toString
+      s"\n${color}${indentSpaces}${info}"
+    }
+  }
 
   def run(eventHandler: EventHandler, loggers: Array[Logger]): Boolean = {
     val className = this.getClass.getName
@@ -89,15 +118,20 @@ abstract class Suite {
     var success = true
 
     tests.foreach { test =>
-      val testSuccess = test.run()
+      val (TestResult(testSuccess, thrown)) = test.run()
       val (status, statusStr, color) =
         if (testSuccess) (Status.Success, "  [ok] ", Console.GREEN)
         else (Status.Failure, "  [fail] ", Console.RED)
       val event = NativeEvent(className, test.name, NativeFingerprint, status)
-      loggers.foreach(_.info(color + statusStr + test.name + Console.RESET))
+
+      val outMsg = color + statusStr + test.name +
+        getThrownString(thrown, color, statusStr.length) +
+        Console.RESET
+
+      loggers.foreach(_.info(outMsg))
+
       eventHandler.handle(event)
       success = success && testSuccess
-
     }
 
     success

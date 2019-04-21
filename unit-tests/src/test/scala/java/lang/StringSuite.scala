@@ -1,6 +1,55 @@
 package java.lang
 
 object StringSuite extends tests.Suite {
+
+  test("String(Array[Byte], Int, Int, String) with null encoding") {
+    assertThrows[java.lang.NullPointerException] {
+      new String("I don't like nulls".getBytes, 0, 3, null: String)
+    }
+  }
+
+  test("String(Array[Byte], Int, Int, String) with unsupported encoding") {
+    assertThrows[java.io.UnsupportedEncodingException] {
+      new String("Pacem in terris".getBytes, 0, 3, "unsupported encoding")
+    }
+  }
+
+  test("String(Array[Byte], String) with null encoding") {
+    assertThrows[java.lang.NullPointerException] {
+      new String("Nulls are just as bad".getBytes, null: String)
+    }
+  }
+
+  test("String(Array[Byte], String) with unsupported encoding") {
+    assertThrows[java.io.UnsupportedEncodingException] {
+      new String("to people of goodwill.".getBytes, "unsupported encoding")
+    }
+  }
+
+  test("String(Array[Byte], start, length) with invalid start or length") {
+    val chars: Array[Char] = Array('a', 'b', 'c')
+
+    assertThrows[java.lang.StringIndexOutOfBoundsException] {
+      new String(chars, -1, chars.length) // invalid start
+    }
+
+    assertThrows[java.lang.StringIndexOutOfBoundsException] {
+      new String(chars, 0, chars.length + 1) // invalid length
+    }
+  }
+
+  test("String(Array[Int], offset, count) with invalid offset or count") {
+    val codePoints = Array[Int](235, 872, 700, 298)
+
+    assertThrows[java.lang.StringIndexOutOfBoundsException] {
+      new String(codePoints, -1, codePoints.length) // invalid offset
+    }
+
+    assertThrows[java.lang.StringIndexOutOfBoundsException] {
+      new String(codePoints, 0, codePoints.length + 1) // invalid length
+    }
+  }
+
   test("+") {
     assert("big 5" == "big " + 5.toByte)
     assert("big 5" == "big " + 5.toShort)
@@ -14,6 +63,43 @@ object StringSuite extends tests.Suite {
     assert("foo" == "" + "foo")
     assert("foobar" == "foo" + "bar")
     assert("foobarbaz" == "foo" + "bar" + "baz")
+  }
+
+  test("codePointAt(index) with invalid index") {
+    val data = "When in the Course"
+
+    assertThrows[java.lang.StringIndexOutOfBoundsException] {
+      data.codePointAt(-1)
+    }
+
+    assertThrows[java.lang.StringIndexOutOfBoundsException] {
+      data.codePointAt(data.length + 1)
+    }
+  }
+
+  test("codePointBefore(index) with invalid index") {
+    val data = "of human events"
+
+    assertThrows[java.lang.StringIndexOutOfBoundsException] {
+      data.codePointBefore(-1)
+    }
+
+    assertThrows[java.lang.StringIndexOutOfBoundsException] {
+      // Careful here, +1 is valid +2 is not
+      data.codePointBefore(data.length + 2)
+    }
+  }
+
+  test("codePointCount(beginIndex, endIndex) with invalid begin | end index") {
+    val data = "it becomes necessary"
+
+    assertThrows[java.lang.StringIndexOutOfBoundsException] {
+      data.codePointCount(-1, data.length)
+    }
+
+    assertThrows[java.lang.StringIndexOutOfBoundsException] {
+      data.codePointCount(0, data.length + 1)
+    }
   }
 
   test("compareTo") {
@@ -92,10 +178,93 @@ object StringSuite extends tests.Suite {
     assert("Grueszszszeszszszszsze".replaceAll("sz", "ß") == "Grueßßßeßßßßße")
   }
 
+  test("replaceAllLiterally with $ in replacement, issue #1070") {
+    val literal     = "{.0}"
+    val replacement = "\\$ipsum"
+    val prefix      = "Lorem "
+    val suffix      = " dolor"
+    val text        = prefix + literal + suffix
+    val expected    = prefix + replacement + suffix
+
+    assert(text.replaceAllLiterally(literal, replacement) == expected)
+  }
+
+  private implicit class StringOps(val s: String) extends AnyVal {
+    def splitVec(sep: String, limit: Int = 0) = s.split(sep, limit).toVector
+  }
+  private def splitTest(sep: String, splitExpr: Option[String] = None) = {
+    val splitSep = splitExpr getOrElse sep
+    val n        = 4
+    val limit    = 2
+
+    assert("".splitVec(splitSep) == Vector(""))
+    assert("".splitVec(splitSep, limit) == Vector(""))
+
+    val noSep = "b"
+    assert(noSep.splitVec(splitSep) == Vector(noSep))
+    assert(noSep.splitVec(splitSep, limit) == Vector(noSep))
+
+    (1 to n) foreach { i =>
+      val allSep = sep * n
+      assert(allSep.splitVec(splitSep) == Vector.empty)
+      assert(
+        allSep.splitVec(splitSep, n) == (0 until (n - 1))
+          .map(_ => "")
+          .toVector :+ sep)
+      assert(
+        allSep.splitVec(splitSep, limit) == (0 until (limit - 1))
+          .map(_ => "")
+          .toVector :+ allSep.drop((limit - 1) * sep.length))
+    }
+
+    val oneSep = noSep + sep
+    assert(oneSep.splitVec(splitSep) == Vector(noSep))
+    assert(oneSep.splitVec(splitSep, 1) == Vector(oneSep))
+    assert(oneSep.splitVec(splitSep, 2) == Vector(noSep, ""))
+
+    val twoSep = oneSep * 2
+    assert(twoSep.splitVec(splitSep) == Vector(noSep, noSep))
+    assert(twoSep.splitVec(splitSep, 1) == Vector(twoSep))
+    assert(twoSep.splitVec(splitSep, 2) == Vector(noSep, oneSep))
+    assert(twoSep.splitVec(splitSep, 3) == Vector(noSep, noSep, ""))
+
+    val leadingSep = sep + noSep
+    assert(leadingSep.splitVec(splitSep) == Vector("", noSep))
+    assert(leadingSep.splitVec(splitSep, 1) == Vector(leadingSep))
+    assert(leadingSep.splitVec(splitSep, 2) == Vector("", noSep))
+    assert(leadingSep.splitVec(splitSep, 3) == Vector("", noSep))
+
+    val trailingSep = noSep + sep
+    assert(trailingSep.splitVec(splitSep) == Vector(noSep))
+    assert(trailingSep.splitVec(splitSep, 1) == Vector(trailingSep))
+    assert(trailingSep.splitVec(splitSep, 2) == Vector(noSep, ""))
+    assert(trailingSep.splitVec(splitSep, 3) == Vector(noSep, ""))
+
+    val leadingPlusTrailing = sep + noSep + sep
+    assert(leadingPlusTrailing.splitVec(splitSep) == Vector("", noSep))
+    assert(
+      leadingPlusTrailing.splitVec(splitSep, 1) == Vector(leadingPlusTrailing))
+    assert(leadingPlusTrailing.splitVec(splitSep, 2) == Vector("", oneSep))
+    assert(leadingPlusTrailing.splitVec(splitSep, 3) == Vector("", noSep, ""))
+    assert(leadingPlusTrailing.splitVec(splitSep, 4) == Vector("", noSep, ""))
+  }
+  test("split") {
+    splitTest("a")
+    splitTest(".", splitExpr = Some("\\."))
+    splitTest("ab", splitExpr = Some("ab"))
+    splitTest("ab", splitExpr = Some("(ab)"))
+  }
+
   test("getBytes") {
     val b = new Array[scala.Byte](4)
     "This is a test".getBytes(10, 14, b, 0)
     assert(new String(b) equals "test")
+  }
+
+  test("getBytes unsupported encoding") {
+    assertThrows[java.io.UnsupportedEncodingException] {
+      "This is a test".getBytes("unsupported encoding")
+    }
   }
 
   test("literals have consistent hash code implementation") {

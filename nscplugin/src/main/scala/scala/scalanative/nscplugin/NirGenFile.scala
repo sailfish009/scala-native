@@ -15,7 +15,8 @@ trait NirGenFile { self: NirGenPhase =>
     val baseDir: AbstractFile =
       settings.outputDirs.outputDirFor(cunit.source.file)
 
-    val id        = genTypeName(sym).id
+    val nir.Global.Top(id) = genTypeName(sym)
+
     val pathParts = id.split("[./]")
     val dir       = (baseDir /: pathParts.init)(_.subdirectoryNamed(_))
 
@@ -29,6 +30,6 @@ trait NirGenFile { self: NirGenPhase =>
     withScratchBuffer { buffer =>
       serializeBinary(defns, buffer)
       buffer.flip
-      VirtualDirectory.local(path.getParent.toFile).write(path, buffer)
+      VirtualDirectory.local(path.getParent).write(path, buffer)
     }
 }

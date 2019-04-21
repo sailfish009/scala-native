@@ -1,7 +1,8 @@
 package java.util
 
 // Ported from Harmony
-// Modified to test Locale.US only. Please see FormatterSuite.scala for the original port
+// Modified to test Locale.US only. Please see FormatterSuite.scala for
+// the original port.
 
 import java.io.BufferedOutputStream
 import java.io.ByteArrayOutputStream
@@ -194,8 +195,7 @@ object FormatterUSSuite extends tests.Suite {
     }
   }
 
-  testFails("Constructor(String, String)", 816) {
-    // OutputStreamWriter should throw UnsupportedEncodingException (NOT UnsupportedCharsetException)
+  test("Constructor(String, String)") {
     assertThrows[NullPointerException](
       new Formatter(null.asInstanceOf[String], Charset.defaultCharset().name()))
 
@@ -207,7 +207,7 @@ object FormatterUSSuite extends tests.Suite {
     }
 
     assertThrows[UnsupportedEncodingException](
-      new Formatter(notExist.getPath(), "ISO 111-1")) // fails #816
+      new Formatter(notExist.getPath(), "ISO 111-1"))
 
     locally {
       val f = new Formatter(fileWithContent.getPath(), "UTF-16BE")
@@ -221,8 +221,7 @@ object FormatterUSSuite extends tests.Suite {
     }
   }
 
-  testFails("Constructor(String, String, Locale)", 816) {
-    // OutputStreamWriter should throw UnsupportedEncodingException (NOT UnsupportedCharsetException)
+  test("Constructor(String, String, Locale)") {
     assertThrows[NullPointerException](
       new Formatter(null.asInstanceOf[String],
                     Charset.defaultCharset().name(),
@@ -244,7 +243,7 @@ object FormatterUSSuite extends tests.Suite {
     }
 
     assertThrows[UnsupportedEncodingException](
-      new Formatter(notExist.getPath(), "ISO 1111-1", Locale.US)) // fails #816
+      new Formatter(notExist.getPath(), "ISO 1111-1", Locale.US))
 
     locally {
       val f = new Formatter(fileWithContent.getPath(), "UTF-16BE", Locale.US)
@@ -278,8 +277,7 @@ object FormatterUSSuite extends tests.Suite {
     }
   }
 
-  testFails("Constructor(File, String)", 816) {
-    // OutputStreamWriter should throw UnsupportedEncodingException (NOT UnsupportedCharsetException)
+  test("Constructor(File, String)") {
 
     locally {
       val f = new Formatter(notExist, Charset.defaultCharset().name())
@@ -300,7 +298,7 @@ object FormatterUSSuite extends tests.Suite {
 
     try {
       assertThrows[UnsupportedEncodingException](
-        new Formatter(notExist, "ISO 1111-1")) /// fails #816
+        new Formatter(notExist, "ISO 1111-1"))
     } finally if (notExist.exists()) {
       // Fail on RI on Windows, because output stream is created and
       // not closed when exception thrown
@@ -308,8 +306,7 @@ object FormatterUSSuite extends tests.Suite {
     }
   }
 
-  testFails("Constructor(File, String, Locale)", 816) {
-    // OutputStreamWriter should throw UnsupportedEncodingException (NOT UnsupportedCharsetException)
+  test("Constructor(File, String, Locale)") {
 
     locally {
       val f = new Formatter(notExist, Charset.defaultCharset().name(), null)
@@ -325,7 +322,7 @@ object FormatterUSSuite extends tests.Suite {
     }
 
     assertThrows[UnsupportedEncodingException](
-      new Formatter(notExist, "ISO 1111-1", Locale.US)) // fails #816
+      new Formatter(notExist, "ISO 1111-1", Locale.US))
 
     locally {
       val f = new Formatter(fileWithContent.getPath, "UTF-16BE", Locale.US)
@@ -361,20 +358,19 @@ object FormatterUSSuite extends tests.Suite {
     f.close()
   }
 
-  testFails("Constructor(OutputStream, String)", 816) { // also 818
-    // OutputStreamWriter should throw UnsupportedEncodingException (NOT UnsupportedCharsetException)
-    // OutputStreamWriter should throw NPE if its argument is null
+  test("Constructor(OutputStream, String)") {
 
     assertThrows[NullPointerException](
       new Formatter(null.asInstanceOf[OutputStream],
-                    Charset.defaultCharset().name())) // fails #818
+                    Charset.defaultCharset().name()))
 
     locally {
       // Porting note: PipedOutputStream is not essential to this test.
-      // Since it doesn't exist on Scala Native yet, it is replaced with a harmless one.
+      // Since it doesn't exist on Scala Native yet, it is replaced with
+      // a harmless one.
       // val os = new PipedOutputStream()
       val os = new ByteArrayOutputStream
-      assertThrows[UnsupportedEncodingException](new Formatter(os, "TMP-1111")) // fails #816
+      assertThrows[UnsupportedEncodingException](new Formatter(os, "TMP-1111"))
     }
 
     locally {
@@ -385,14 +381,12 @@ object FormatterUSSuite extends tests.Suite {
     }
   }
 
-  testFails("Constructor(OutputStream, String, Locale)", 816) { // also 818
-    // OutputStreamWriter should throw UnsupportedEncodingException (NOT UnsupportedCharsetException)
-    // OutputStreamWriter should throw NPE if its argument is null
+  test("Constructor(OutputStream, String, Locale)") {
 
     assertThrows[NullPointerException](
       new Formatter(null.asInstanceOf[OutputStream],
                     Charset.defaultCharset().name(),
-                    Locale.getDefault)) // fails #818
+                    Locale.getDefault))
 
     locally {
       val os = new FileOutputStream(notExist)
@@ -402,11 +396,12 @@ object FormatterUSSuite extends tests.Suite {
 
     locally {
       // Porting note: PipedOutputStream is not essential to this test.
-      // Since it doesn't exist on Scala Native yet, it is replaced with a harmless one.
+      // Since it doesn't exist on Scala Native yet, it is replaced with
+      // a harmless one.
       // val os = new PipedOutputStream()
       val os = new ByteArrayOutputStream
       assertThrows[UnsupportedEncodingException](
-        new Formatter(os, "TMP-1111", Locale.getDefault)) // fails #816
+        new Formatter(os, "TMP-1111", Locale.getDefault))
     }
 
     locally {
@@ -896,12 +891,8 @@ object FormatterUSSuite extends tests.Suite {
     }
   }
 
-  testFails(
-    "format(String, Array[Object]) for Float/Double conversion type 's' and 'S' with excess precision",
-    481) {
-    // 1.1.toString = "1.1" on Scala JVM, "1.100000" on Scala Native
-    // Formatter$.Transformer.padding trims to `precision` number of chars, and then pads up to `width`.
-    // The excess '0's lead to test failure.
+  test(
+    "format(String, Array[Object]) for Float/Double conversion type 's' and 'S' with excess precision") {
     val triple = Array(
       Array(1.1f, "%-6.4s", "1.1   "),
       Array(1.1f, "%.5s", "1.1"),
@@ -2456,10 +2447,11 @@ object FormatterUSSuite extends tests.Suite {
     }
   }
 
-  testFails(
-    "format(String, Array[Object]) for java.lang.Float/Double.MAX_VALUE conversion type 'f'",
-    0) { // issue not filed yet
-    // These need a way to reproduce the same decimal representation of extreme values as JVM.
+  test(
+    "format(String, Array[Object]) for java.lang.Float/Double.MAX_VALUE " +
+      "conversion type 'f'") {
+    // These need a way to reproduce the same decimal representation of
+    // extreme values as JVM.
     val tripleF = Array(
       Array(-1234567890.012345678d, "% 0#(9.8f", "(1234567890.01234580)"),
       Array(
@@ -2718,10 +2710,9 @@ object FormatterUSSuite extends tests.Suite {
     }
   }
 
-  testFails(
-    "format(String, Array[Object]) for java.lang.Double.MIN_VALUE conversion type 'a' and 'A'",
-    0) { // issue not filed yet
-    // it is java.lang.Double.toHexString in Formatter.FloatUtil.transform_a that throws NumberFormatException.
+  test(
+    "format(String, Array[Object]) for java.lang.Double.MIN_VALUE conversion type 'a' and 'A'") {
+
     val tripleA: Array[Array[Any]] = Array(
       Array(java.lang.Double.MIN_VALUE, "%a", "0x0.0000000000001p-1022"),
       Array(java.lang.Double.MIN_VALUE, "%5a", "0x0.0000000000001p-1022")
@@ -3446,9 +3437,7 @@ object FormatterUSSuite extends tests.Suite {
     }
   }
 
-  testFails("Formatter.BigDecimalLayoutForm.values()", 0) { // issue not filed yet
-    // BigDecimalLayoutForm.values() segfaults for unknown reason.
-    throw new NullPointerException() // to prevent segfault
+  test("Formatter.BigDecimalLayoutForm.values()") {
     import Formatter.BigDecimalLayoutForm
     val vals: Array[BigDecimalLayoutForm] = BigDecimalLayoutForm.values()
     assertEquals(2, vals.length)
@@ -3456,9 +3445,7 @@ object FormatterUSSuite extends tests.Suite {
     assertEquals(BigDecimalLayoutForm.DECIMAL_FLOAT, vals(1))
   }
 
-  testFails("Formatter.BigDecimalLayoutForm.valueOf(String)", 0) { // issue not filed yet
-    // the line `val sci: ...` segfaults for unknown reason.
-    throw new NullPointerException() // to prevent segfault
+  test("Formatter.BigDecimalLayoutForm.valueOf(String)") {
     import Formatter.BigDecimalLayoutForm
     val sci: BigDecimalLayoutForm = BigDecimalLayoutForm.valueOf("SCIENTIFIC")
     assertEquals(BigDecimalLayoutForm.SCIENTIFIC, sci)
@@ -3471,8 +3458,17 @@ object FormatterUSSuite extends tests.Suite {
    * Regression test for Harmony-5845
    * test the short name for timezone whether uses DaylightTime or not
    */
-  testFails("DaylightTime", 0) { // issue not filed yet
-    // java.util.TimeZone$.getAvailableIDs throws NotImplementedError
+  test("DaylightTime") {
+    // 2018-09-05 Implementation note:
+    // The TimeZone.getAvailableIDs() now stub returns an empty array,
+    // no longer throwing NotImplementedError.That allows his test to be
+    // enabled.
+    //
+    // This test now passes, but the success is may be vacuous/deceiving.
+    // The actual "America" conditions below will not get executed until
+    // getAvailableIDs() is more fully implemented and reports those TimeZones
+    // as available. When that happens, this test may start failing for
+    // "mysterious" but valid reasons.
     val c1: Calendar = new GregorianCalendar(2007, 0, 1)
     val c2: Calendar = new GregorianCalendar(2007, 7, 1)
     for (tz <- TimeZone.getAvailableIDs) {

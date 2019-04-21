@@ -1,6 +1,6 @@
 package java.lang
 
-import java.lang.reflect.Field
+import java.lang.reflect.{Field, Method}
 
 import scalanative.native._
 import scalanative.runtime.{Array => _, _}
@@ -17,19 +17,22 @@ object rtti {
 }
 import rtti._
 
-final class _Class[A](val ty: Ptr[Type]) {
+final class _Class[A](val rawty: RawPtr) {
+  private def ty: Ptr[Type] =
+    fromRawPtr[Type](rawty)
+
   def cast(obj: Object): A =
     obj.asInstanceOf[A]
 
   def getComponentType(): _Class[_] = {
-    if (ty == typeof[BooleanArray]) classOf[scala.Boolean]
-    else if (ty == typeof[CharArray]) classOf[scala.Char]
-    else if (ty == typeof[ByteArray]) classOf[scala.Byte]
-    else if (ty == typeof[ShortArray]) classOf[scala.Short]
-    else if (ty == typeof[IntArray]) classOf[scala.Int]
-    else if (ty == typeof[LongArray]) classOf[scala.Long]
-    else if (ty == typeof[FloatArray]) classOf[scala.Float]
-    else if (ty == typeof[DoubleArray]) classOf[scala.Double]
+    if (rawty == toRawType(classOf[BooleanArray])) classOf[scala.Boolean]
+    else if (rawty == toRawType(classOf[CharArray])) classOf[scala.Char]
+    else if (rawty == toRawType(classOf[ByteArray])) classOf[scala.Byte]
+    else if (rawty == toRawType(classOf[ShortArray])) classOf[scala.Short]
+    else if (rawty == toRawType(classOf[IntArray])) classOf[scala.Int]
+    else if (rawty == toRawType(classOf[LongArray])) classOf[scala.Long]
+    else if (rawty == toRawType(classOf[FloatArray])) classOf[scala.Float]
+    else if (rawty == toRawType(classOf[DoubleArray])) classOf[scala.Double]
     else classOf[java.lang.Object]
   }
 
@@ -50,15 +53,15 @@ final class _Class[A](val ty: Ptr[Type]) {
     ???
 
   def isArray(): scala.Boolean =
-    (ty == typeof[BooleanArray] ||
-      ty == typeof[CharArray] ||
-      ty == typeof[ByteArray] ||
-      ty == typeof[ShortArray] ||
-      ty == typeof[IntArray] ||
-      ty == typeof[LongArray] ||
-      ty == typeof[FloatArray] ||
-      ty == typeof[DoubleArray] ||
-      ty == typeof[ObjectArray])
+    (rawty == toRawType(classOf[BooleanArray]) ||
+      rawty == toRawType(classOf[CharArray]) ||
+      rawty == toRawType(classOf[ByteArray]) ||
+      rawty == toRawType(classOf[ShortArray]) ||
+      rawty == toRawType(classOf[IntArray]) ||
+      rawty == toRawType(classOf[LongArray]) ||
+      rawty == toRawType(classOf[FloatArray]) ||
+      rawty == toRawType(classOf[DoubleArray]) ||
+      rawty == toRawType(classOf[ObjectArray]))
 
   def isAssignableFrom(that: Class[_]): scala.Boolean =
     is(that.asInstanceOf[_Class[_]].ty, ty)
@@ -70,72 +73,52 @@ final class _Class[A](val ty: Ptr[Type]) {
     // This replicates the logic of the compiler-generated instance check
     // that you would normally get if you do (obj: L).isInstanceOf[R],
     // where rtti for L and R are `left` and `right`.
-    left.kind match {
-      case CLASS_KIND =>
-        right.kind match {
-          case CLASS_KIND =>
-            val rightCls  = right.cast[Ptr[ClassType]]
-            val rightFrom = rightCls.idRangeFrom
-            val rightTo   = rightCls.idRangeTo
-            val leftId    = left.id
-            leftId >= rightFrom && leftId <= rightTo
-          case TRAIT_KIND =>
-            __check_class_has_trait(left.id, right.id)
-          case STRUCT_KIND =>
-            false
-        }
-      case TRAIT_KIND =>
-        right.kind match {
-          case CLASS_KIND =>
-            false
-          case TRAIT_KIND =>
-            __check_trait_has_trait(left.id, right.id)
-          case STRUCT_KIND =>
-            false
-        }
-      case STRUCT_KIND =>
-        right.kind match {
-          case CLASS_KIND =>
-            false
-          case TRAIT_KIND =>
-            false
-          case STRUCT_KIND =>
-            left.id == right.id
-        }
+    if (left.isClass) {
+      if (right.isClass) {
+        val rightCls  = right.asInstanceOf[Ptr[ClassType]]
+        val rightFrom = rightCls.id
+        val rightTo   = rightCls.idRangeUntil
+        val leftId    = left.id
+        leftId >= rightFrom && leftId <= rightTo
+      } else {
+        __check_class_has_trait(left.id, -right.id - 1)
+      }
+    } else {
+      if (right.isClass) {
+        false
+      } else {
+        __check_trait_has_trait(-left.id - 1, -right.id - 1)
+      }
     }
 
   def isInterface(): scala.Boolean =
-    ty.kind == TRAIT_KIND
+    !ty.isClass
 
   def isPrimitive(): scala.Boolean =
-    (ty == typeof[PrimitiveBoolean] ||
-      ty == typeof[PrimitiveChar] ||
-      ty == typeof[PrimitiveByte] ||
-      ty == typeof[PrimitiveShort] ||
-      ty == typeof[PrimitiveInt] ||
-      ty == typeof[PrimitiveLong] ||
-      ty == typeof[PrimitiveFloat] ||
-      ty == typeof[PrimitiveDouble] ||
-      ty == typeof[PrimitiveUnit])
+    (rawty == toRawType(classOf[PrimitiveBoolean]) ||
+      rawty == toRawType(classOf[PrimitiveChar]) ||
+      rawty == toRawType(classOf[PrimitiveByte]) ||
+      rawty == toRawType(classOf[PrimitiveShort]) ||
+      rawty == toRawType(classOf[PrimitiveInt]) ||
+      rawty == toRawType(classOf[PrimitiveLong]) ||
+      rawty == toRawType(classOf[PrimitiveFloat]) ||
+      rawty == toRawType(classOf[PrimitiveDouble]) ||
+      rawty == toRawType(classOf[PrimitiveUnit]))
 
-  override def equals(other: Any): scala.Boolean =
+  @inline override def equals(other: Any): scala.Boolean =
     other match {
       case other: _Class[_] =>
-        ty == other.ty
+        rawty == other.rawty
       case _ =>
         false
     }
 
-  override def hashCode: Int =
-    ty.cast[scala.Long].##
+  @inline override def hashCode: Int =
+    Intrinsics.castRawPtrToLong(rawty).##
 
   override def toString = {
-    val name = getName
-    val prefix = ty.kind match {
-      case CLASS_KIND  => "class "
-      case TRAIT_KIND  => "interface "
-      case STRUCT_KIND => "struct "
-    }
+    val name   = getName
+    val prefix = if (ty.isClass) "class " else "interface "
     prefix + name
   }
 
@@ -145,11 +128,11 @@ final class _Class[A](val ty: Ptr[Type]) {
   def getConstructor(args: Array[Object]): java.lang.reflect.Constructor[_] =
     ???
   @stub
-  def getConstructors(): Array[Object]   = ???
-  def getDeclaredFields(): Array[Object] = ???
+  def getConstructors(): Array[Object]  = ???
+  def getDeclaredFields(): Array[Field] = ???
   def getMethod(name: java.lang.String,
-                args: Array[Object]): java.lang.reflect.Method         = ???
-  def getMethods(): Array[Object]                                      = ???
+                args: Array[Class[_]]): java.lang.reflect.Method       = ???
+  def getMethods(): Array[Method]                                      = ???
   def getResourceAsStream(name: java.lang.String): java.io.InputStream = ???
 }
 
